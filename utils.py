@@ -12,7 +12,7 @@ def remove_outlier_rows(df, col, z_max=3):
 
 
 def find_closest_row(value, df, colname, use_next=False):
-    """ Finds the closet previous row."""
+    """ Finds the closest previous row."""
     # Fastest way to find the neighboring rows
     next_row = np.searchsorted(df[colname].values, value)
     # If the next row is the first row, just return the first row
@@ -25,4 +25,3 @@ def find_closest_row(value, df, colname, use_next=False):
 
 def slice_between(df, col, low, high):
     return df[df[col].between(low, high)].copy()
-
