@@ -76,3 +76,11 @@ def slice_between(df, col, low, high):
 def get_param(df, name, time=0):
     param_df = df["PARM"][df["PARM"]["Name"]==" "+name]
     return float(find_closest_row(time, param_df, "TimeUS")["Value"])
+
+def haversine_meters(lat1, lng1, lat2, lng2):
+    R = 6372.8  # 3959.87433 miles. 6372.8 km
+    dLat, dLon = np.radians(lat2-lat1), np.radians(lng2-lng1)
+    lat1, lat2 = np.radians(lat1), np.radians(lat2)
+    a = np.sin(dLat/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dLon/2)**2
+    c = 2*np.arcsin(np.sqrt(a))
+    return  1000 * R * c  # meters
