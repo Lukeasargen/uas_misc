@@ -48,27 +48,32 @@ def extract_data(log_dir, log_filename):
     data["MODE"]["Mode"] = data["MODE"]["Mode"].astype('string')
     return data
 
-
 def remove_outlier_rows(df, col, z_max=3):
     while True:
+        if len(df)==0: break
         z_mag = np.abs(stats.zscore(df[col]))
+        if np.isnan(z_mag).any(): break
         idxmax = z_mag.idxmax()
         if z_mag[idxmax]<z_max: break  # if good, break before drop
         df = df.drop(idxmax)
     return df.copy()
-
 
 def find_closest_row(value, df, colname, use_next=False):
     """ Finds the closest previous row."""
     # Fastest way to find the neighboring rows
     next_row = np.searchsorted(df[colname].values, value)
     # If the next row is the first row, just return the first row
-    if next_row==0:
-        return df.iloc[next_row]
-    # Finding the previous row
-    prev_row = (next_row-1).clip(0)
-    return df.iloc[next_row] if use_next else df.iloc[prev_row]
-
+    try:
+        if next_row==0:
+            out = df.iloc[next_row]
+        else:
+            # Finding the previous row
+            prev_row = (next_row-1).clip(0)
+            out = df.iloc[next_row] if use_next else df.iloc[prev_row]
+    except:
+        df = pd.concat([df, pd.DataFrame([[0]*df.shape[1]], columns=df.columns)], ignore_index=True)
+        out = df.iloc[next_row]
+    return out
 
 def slice_between(df, col, low, high):
     return df[df[col].between(low, high)].copy()
