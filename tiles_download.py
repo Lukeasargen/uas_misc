@@ -1,14 +1,10 @@
 # https://github.com/doersino/aerialbot
 
-from datetime import datetime
-import hashlib
 import io
 import math
 import os
-import random
 import re
 import requests
-import threading
 import time
 
 import numpy as np
@@ -19,9 +15,9 @@ def main():
     TILE_SIZE = 256  # pixels
     EARTH_CIRCUMFERENCE = 40075.016686 * 1000  # in meters, at the equator   
     USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36"
-    tile_path_template = "googlemaps-tiles/z{zoom}x{x}y{y}.jpg"
+    tile_path_template = "googlemaps-tiles/z{zoom}x{x}y{y}.png"
     tile_url_template = "https://khms2.google.com/kh/v={google_maps_version}?x={x}&y={y}&z={zoom}"
-    image_path_template = "googlemaps-stitch/{latitude},{longitude}-w{width}m-h{height}m-z{zoom}-swx{swx}-swy{swy}-nex{nex}-ney{ney}.jpg"
+    image_path_template = "googlemaps-stitch/swx{swx}-swy{swy}-nex{nex}-ney{ney}-z{zoom}.png"
 
     # inputs
     lat = 40.801127286159506
@@ -55,8 +51,8 @@ def main():
     meters_per_pixel_at_zoom_0 = ((EARTH_CIRCUMFERENCE / TILE_SIZE) * math.cos(math.radians(lat)))
     desired_zoom = np.log(meters_per_pixel_at_zoom_0/meters_per_pixel)/np.log(2)
     print(f"Desired zoom for {meters_per_pixel} m/pix: {desired_zoom}")
-    zoom = np.clip(desired_zoom, 0, 23)  # Max zoom is 23
-    zoom = 19
+    zoom = int(np.clip(desired_zoom, 0, 23))  # Max zoom is 23
+    # zoom = 23
     print(f"Using zoom: {zoom}")
     in_per_m = 39.3701
     print(f"GSD: {meters_per_pixel_at_zoom_0/(2**zoom):.4f} m/pix. {(2**zoom)/(in_per_m*meters_per_pixel_at_zoom_0):.4f} pix/in.")
@@ -143,19 +139,21 @@ def main():
         print(f"Missing tiles: {missing_tiles}")
     print(f"Download complete! {dt:.2f}s. {1000*dt/(tiles_width*tiles_height):.1f} ms/img.")
 
+    print("Stitching tiles")
     # Stitch the tiles together, ignore failed tiles
     stitch_filename =  image_path_template.format(
-        latitude=lat, longitude=lon,
-        width=geowidth, height=geoheight,
-        zoom=zoom,
         swx=swx, swy=swy,
         nex=nex, ney=ney,
+        zoom=zoom,
     )
     stitch = Image.new('RGB', (tiles_width * TILE_SIZE, tiles_height * TILE_SIZE))
     for x in range(0, tiles_width):
         for y in range(0, tiles_height):
-            stitch.paste(image_tiles[x][y], (x * TILE_SIZE, y * TILE_SIZE))
+            if image_tiles[x][y] is not None:
+                stitch.paste(image_tiles[x][y], (x * TILE_SIZE, y * TILE_SIZE))
     stitch.save(stitch_filename)
+
+    print("Complete")
 
 
 if __name__ == "__main__":
