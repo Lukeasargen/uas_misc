@@ -44,6 +44,8 @@ class SimCam:
         m_per_pix = resolution(zoom=zoom, lat=tl_lat)
         self.m_per_pix = m_per_pix
         self.ground_image = cv2.imread(self.map_filename)
+        # Replace the top corner with black to remap a "blank" pixel
+        self.ground_image[0][0] = np.zeros((1,3))
         self.image_size = image_size
         self.cam_att = cam_att
         self.focal_length = focal_length
@@ -64,9 +66,10 @@ class SimCam:
         fx, fy = self.focal_length
         cx, cy = self.optical_center
 
-        fov_x = np.degrees(2*np.arctan(0.5*width/fx))
-        fov_y = np.degrees(2*np.arctan(0.5*height/fy))
-        print(f"{fov_x = }. {fov_y = }")
+        # Not used, but useful formulas for total FOV angle
+        # fov_x = np.degrees(2*np.arctan(0.5*width/fx))
+        # fov_y = np.degrees(2*np.arctan(0.5*height/fy))
+        # print(f"{fov_x = }. {fov_y = }")
 
         # camera extrinsics
         p = self.lla_to_pixel(*uav_pos)
@@ -92,20 +95,8 @@ class SimCam:
                         [np.sin(gamma), np.cos(gamma), 0, 0],
                         [0, 0, 1, 0],
                         [0, 0, 0, 1]])
-
         # Composed rotation matrix with (RX, RY, RZ)
         R = np.dot(np.dot(RX, RY), RZ)
-        # print(R)
-
-        # roll, pitch, yaw = uav_att
-        # c1, s1 = cosd(-yaw), sind(-yaw)
-        # c2, s2 = cosd(-roll), sind(-roll)
-        # c3, s3 = cosd(-pitch), sind(-pitch)
-        # rot_mtx = np.array([[c1*c2, c1*s2*s3-s1*c3, c1*c3*s2+s1*s3]
-        #                     ,[s1*c2, s1*s2*s3+c1*c3, s1*s2*c3-c1*s3]
-        #                     ,[-s2, c2*s3, c2*c3]])
-        # print(rot_mtx)
-        # R = rot_mtx
 
         # Projection 2D -> 3D matrix
         A1 = np.array([ [1, 0, -w/2],
@@ -118,44 +109,63 @@ class SimCam:
                         [0, fy, cy, 0],
                         [0, 0, 1, 0]])
         
-        # This is fowards, map pixel to camera pixel
+        # This is foward, map pixel to camera pixel
         # Original site uses this order
         # extrinsics = np.dot(A2, np.dot(T, np.dot(R, A1)))
         # But translate should be first bc it's aligned with the map pixels
         extrinsics = np.dot(A2, np.dot(R, np.dot(T, A1)))
+        inv_extrinsics = np.linalg.inv(extrinsics)
         # print(extrinsics)
 
-        # TODO: add near and far clipping planes
+        # Start with pixels values of the output image
+        dst_pixels = np.ones((height, width, 3), np.float32)
+        dst_pixels[:, :, :2] = np.mgrid[0:width, 0:height].T
+
+        # TODO: undistorted image -> distorted pixels from full FOV
+
+        # Calculate source image x, y
+        src_pixels = dst_pixels.dot(inv_extrinsics.T)
+        mapx = np.divide(src_pixels[:,:,0], src_pixels[:,:, 2]).astype(np.float32)
+        mapy = np.divide(src_pixels[:,:,1], src_pixels[:,:, 2]).astype(np.float32)
+        # Remove -z values, points not in the viewing frustum
+        mapx[src_pixels[:,:, 2] < 0] = 0
+        mapy[src_pixels[:,:, 2] < 0] = 0
+        # Use cv2.remap
+        out = cv2.remap(self.ground_image, mapx, mapy, cv2.INTER_LINEAR)
 
         # Capture the simulated perspective
-        out = cv2.warpPerspective(
-                    src=self.ground_image,
-                    M=extrinsics,
-                    dsize=(width, height),
-                    flags=cv2.INTER_LINEAR,
-                    borderMode=cv2.BORDER_CONSTANT,
-                    borderValue=0,
-                )
-        # Apply len distortion
-        # dst = cv2.undistort(
-        #     src=out,
-        #     cameraMatrix=A2[:, :3],
-        #     distCoeffs=self.distortion,
+        # Undistorted perfect image
+        # ideal_lens = cv2.warpPerspective(
+        #             src=self.ground_image,
+        #             M=extrinsics,
+        #             dsize=(width, height),
+        #             flags=cv2.INTER_LINEAR,
+        #             borderMode=cv2.BORDER_CONSTANT,
+        #             borderValue=0,
         # )
-        # mapx, mapy = cv2.initUndistortRectifyMap(mtx,dist,None,newcameramtx,(w,h),5)
-        # dst = cv2.remap(img,mapx,mapy,cv2.INTER_LINEAR)
-        # cv2.imwrite("SimCam/out-undistort.jpg", dst)
+        # cv2.imwrite("SimCam/out2.jpg", ideal_lens)
 
-        # Project the corners of the perspective roi
-        # corners = np.array([
+        # Apply undistort to compare with out2
+        # cameraMatrix = np.array([
+        #     [2*fx, 0, cx],
+        #     [0, 2*fy, cy],
         #     [0, 0, 1],
-        #     [width, 0, 1],
-        #     [width, height, 1],
-        #     [0, height, 1],
         # ])
-        # inv_extrinsics = np.linalg.inv(extrinsics)
-        # pts = [np.dot(inv_extrinsics, c) for c in corners]
-        # pts = [p/p[2] for p in pts]
+        # newCameraMatrix, roi = cv2.getOptimalNewCameraMatrix(
+        #     cameraMatrix=cameraMatrix,
+        #     distCoeffs=self.distortion,
+        #     imageSize=(width, height),
+        #     alpha=0,
+        #     newImgSize=(width, height),
+        # )
+        # undistorted = cv2.undistort(
+        #     src=out,
+        #     cameraMatrix=cameraMatrix,
+        #     distCoeffs=self.distortion,
+        #     newCameraMatrix=newCameraMatrix,
+        # )
+        # cv2.imwrite(f"SimCam/out1.jpg", undistorted)
+
 
         # Show the simulated image on the gps image
         # out2 = cv2.warpPerspective(
@@ -164,22 +174,6 @@ class SimCam:
         #             dsize=(w, h),
         #             flags=cv2.WARP_INVERSE_MAP,
         #         )
-
-        # ROI closed polygon, do nothing
-
-        # Draw yaw vector
-        # r = max(w, h)
-        # x = int(r*np.sin(np.radians(yaw)) + w/2)
-        # y = int(-r*np.cos(np.radians(yaw)) + h/2)
-        # cv2.line(out2,(int(w/2),int(h/2)),(x,y),(0,255,0),5)
-        # cx, cy, cz = np.dot(inv_extrinsics, np.array([width/2, height/2, 1]))
-        # cv2.line(out2,(int(cx/cz),int(cy/cz)),(x,y),(255,0,0),5)
-        # for i, p in enumerate(pts):
-        #     print(p)
-        #     cv2.circle(out2, (int(p[0]), int(p[1])), 20, (0,0,255), -1)
-
-        # cv2.imwrite("SimCam/out2.jpg", out2)
-
         return out
 
 def main():
@@ -200,10 +194,10 @@ def main():
     # mx, my, zoom = 594800, 787799, 21
 
     # lat, lon, alt in meters
-    # 50m above home plate
+    # above home plate
     uav_pos = [40.80164174483064, -77.89348745160423, 10]
     # roll, pitch, yaw, degrees
-    uav_att = [0, 100, 0]
+    uav_att = [0, 0, 0]
     # camera attitude offsets from straight down
     cam_att = [0, 0, 0]
 
@@ -221,7 +215,6 @@ def main():
         2.62608080e-04,     # p2
         -2.82170416e-02,    # k3
     ])
-    # TODO: distortion
 
     sim = SimCam(
             mx=mx, 
@@ -236,24 +229,24 @@ def main():
             )
 
     out = sim.capture(uav_pos, uav_att)
-    cv2.imwrite("SimCam/out.jpg", out)
-    # cv2.imwrite("SimCam/map.jpg", sim.ground_image)
+    cv2.imwrite("SimCam/out0.jpg", out)
+    exit()
 
-    # fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    # fps = 30.0
-    # video_writer = cv2.VideoWriter("SimCam/out.avi", fourcc, fps, image_size)
-    # max_pitch = 15
-    # max_roll = 5
-    # steps = 60
-    # for t in range(2*steps):
-    #     r = np.radians(t*360/steps)
-    #     y = t*90/steps
-    #     s, c = np.sin(r*1.51), np.cos(r)
-    #     uav_att = [max_roll*s, max_pitch*c, y]
-
-    #     out = sim.capture(uav_pos, uav_att)
-    #     video_writer.write(out)
-    # video_writer.release()
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    fps = 30.0
+    video_writer = cv2.VideoWriter("SimCam/out.avi", fourcc, fps, image_size)
+    max_pitch = 120
+    max_roll = 60
+    steps = 60
+    for t in range(2*steps):
+        r = np.radians(t*90/steps)
+        y = t*360/steps
+        s, c = np.sin(r), np.cos(0.7*r)
+        uav_att = [max_roll*c, max_pitch*s, y]
+        out = sim.capture(uav_pos, uav_att)
+        # cv2.imwrite(f"SimCam/out_{t:02d}.jpg", out)
+        video_writer.write(out)
+    video_writer.release()
 
     # move aligned data to utils
     # Interpolate between rows for given time
