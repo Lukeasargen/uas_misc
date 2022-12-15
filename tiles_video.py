@@ -1,5 +1,7 @@
 # http://jepsonsblog.blogspot.tw/2012/11/rotation-in-3d-using-opencvs.html
 
+import hashlib
+import os
 import sys
 import re
 import cv2
@@ -27,6 +29,15 @@ def ned_translate(lat, lon, dN=0, dE=0):
     newlon = lon + np.degrees(dLon)
     return (newlat, newlon)
 
+def brown_rmax(k1, k2, k3):
+    roots = np.roots([7*k3, 5*k2, 3*k1, 1])
+    real = np.sqrt(np.abs(roots[np.isreal(roots)]))
+    if len(real)>0:
+        rmax = min(real[real>0])
+    else:
+        rmax = np.inf
+    return rmax
+
 class SimCam:
     def __init__(self, map_filename, cam_params, cam_att):
         self.map_filename = map_filename
@@ -41,17 +52,82 @@ class SimCam:
         self.dst_pixels, self.invalid_pixels = self.create_distorted_pixels()
         
     def create_distorted_pixels(self):
-        # Find the positive hash of the camera params
-        cam_params_hash = hash(str(self.cam_params)) & sys.maxsize
+        hash_filename = hashlib.sha256(str(self.cam_params).encode('utf-8')).hexdigest() + ".npy"
+        print(f"{hash_filename = }")
         # Load the pixels if they exist or calculate them
-        distortion = self.cam_params["distortion"]
-        # if np.sum(abs(distortion))>0:
-        #     k1, k2, p1, p2, k3 = distortion
-        # else:
         width, height = self.cam_params["width"], self.cam_params["height"]
         dst_pixels = np.ones((height, width, 3), np.float32)
         dst_pixels[:, :, :2] = np.mgrid[0:width, 0:height].T
-        invalid_pixels = np.full((height, width,), False)
+        distortion = self.cam_params["distortion"]
+        if np.sum(abs(distortion))>0:
+            distortion_folder = r"SimCam/cam_params"
+            os.makedirs(distortion_folder, exist_ok=True)
+            src_filename = os.path.join(distortion_folder, hash_filename)
+            # Check if the distortion pixels are saved
+            if os.path.isfile(src_filename):
+                # Load the params
+                with open(src_filename, 'rb') as f:
+                    dst_pixels = np.load(f)
+                    invalid_pixels = np.load(f)
+            else:
+                # Calculate and save the params
+                k1, k2, p1, p2, k3 = distortion
+                # Convert to camera coordinates
+                fx, fy = 2*self.cam_params["fx"], 2*self.cam_params["fy"]
+                cx, cy = self.cam_params["cx"], self.cam_params["cy"]
+                cameraMatrix = np.array([
+                    [fx, 0, cx],
+                    [0, fy, cy],
+                    [0, 0, 1],
+                ])
+                # Find double prime, invert the projection matrix
+                inv_M = np.linalg.inv(cameraMatrix)
+                double_prime = dst_pixels.dot(inv_M.T)  # undistorted pixels
+                rmax = brown_rmax(k1, k2, k3)
+                x_pp_goal = double_prime[:,:,0].reshape(-1)
+                y_pp_goal = double_prime[:,:,1].reshape(-1)
+                # Initialize guess
+                x_p = x_pp_goal.copy()
+                y_p = y_pp_goal.copy()
+                for i in range(1000):
+                    r_s = x_p**2 + y_p**2
+                    radial = 1 + k1*r_s + k2*r_s*r_s + k3*r_s*r_s*r_s
+                    # Undistort guess to find the error
+                    x_pp_hat = x_p*radial + 2*p1*x_p*y_p + p2*(r_s + 2*x_p*x_p)
+                    y_pp_hat = y_p*radial + 2*p2*x_p*y_p + p1*(r_s + 2*y_p*y_p)
+                    # Calculate the updates
+                    dx_pp = x_pp_goal - x_pp_hat
+                    dy_pp = y_pp_goal - y_pp_hat
+                    dx_p = radial + 2*p1*y_p + 4*p2*x_p + 2*p2*y_p
+                    dy_p = radial + 2*p1*x_p + 4*p2*y_p + 2*p2*x_p
+                    alpha = 0.1
+                    dx = alpha*(dx_pp*dx_p)
+                    dy = alpha*(dy_pp*dy_p)
+                    # Update the valid pixels only
+                    valid = r_s < rmax*rmax
+                    alpha = 1.0
+                    x_p[valid] += alpha*dx[valid]
+                    y_p[valid] += alpha*dy[valid]
+
+                    errorX = np.abs(x_pp_goal[valid]-x_pp_hat[valid])
+                    errorY = np.abs(y_pp_goal[valid]-y_pp_hat[valid])
+                    print(f"{i}. X {np.sum(errorX):.5f}. {np.max(errorX):.5f}. Y {np.sum(errorY):.5f}. {np.max(errorY):.5f}.")
+
+                    if np.max(errorX)<0.001 and np.max(errorY)<0.001:
+                        break
+
+                single_prime = np.ones((height, width, 3), np.float32)
+                single_prime[:, :, 0] = x_p.reshape(height, width)
+                single_prime[:, :, 1] = y_p.reshape(height, width)
+                dst_pixels = single_prime.dot(cameraMatrix.T)
+                invalid_pixels = ~valid.reshape(height, width)
+
+                with open(src_filename, 'wb') as f:
+                    np.save(f, dst_pixels)
+                    np.save(f, invalid_pixels)
+        else:
+            # Do nothing and no pixels are invalid
+            invalid_pixels = np.full((height, width,), False)
         return dst_pixels, invalid_pixels
 
     def lla_to_pixel(self, lat, lon, alt):
@@ -185,7 +261,7 @@ def main():
     # above home plate
     uav_pos = [40.80164174483064, -77.89348745160423, 10]
     # roll, pitch, yaw, degrees
-    uav_att = [0, 0, 0]
+    uav_att = [0, 90, 0]
     # camera attitude offsets from straight down
     cam_att = [0, 0, 0]
 
