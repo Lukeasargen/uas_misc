@@ -22,8 +22,8 @@ def main():
     # inputs
     lat = 40.801127286159506
     lon = -77.89370867545878
-    geowidth = 220  # meters, longitude range
-    geoheight = 180  # meters, latitude range
+    geowidth = 500  # meters, longitude range
+    geoheight = 500  # meters, latitude range
     meters_per_pixel = 0.0127  # meters/pixel, sames as 0.5 in/pixel
     image_quality = 50
 
@@ -52,7 +52,7 @@ def main():
     desired_zoom = np.log(meters_per_pixel_at_zoom_0/meters_per_pixel)/np.log(2)
     print(f"Desired zoom for {meters_per_pixel} m/pix: {desired_zoom}")
     zoom = int(np.clip(desired_zoom, 0, 23))  # Max zoom is 23
-    # zoom = 23
+    zoom = 21
     print(f"Using zoom: {zoom}")
     in_per_m = 39.3701
     print(f"GSD: {meters_per_pixel_at_zoom_0/(2**zoom):.4f} m/pix. {(2**zoom)/(in_per_m*meters_per_pixel_at_zoom_0):.4f} pix/in.")
@@ -129,6 +129,7 @@ def main():
         for y in range(ney, swy+1):
             all_tiles.append((x, y, zoom))
 
+    print("Starting Download.")
     threads = 24
     pool = ThreadPool(threads)
     pool.map(download_image, all_tiles)

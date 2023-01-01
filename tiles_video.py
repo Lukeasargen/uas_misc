@@ -147,7 +147,7 @@ class SimCam:
 
         roll, pitch, yaw = uav_att
         croll, cpitch, cyaw = self.cam_att
-        theta, phi, gamma = np.radians(-pitch-croll), np.radians(-roll-cpitch), np.radians(-yaw-cyaw)
+        theta, phi, gamma = np.radians(-pitch-cpitch), np.radians(-roll-croll), np.radians(-yaw-cyaw)
         # Rotation matrices around the X, Y, and Z axis
         RX = np.array([ [1, 0, 0, 0],
                         [0, np.cos(theta), -np.sin(theta), 0],
@@ -249,21 +249,21 @@ class SimCam:
 
 def main():
     # map_filename = "googlemaps-stitch/swx148701-swy196953-nex148704-ney196950-z19.png"
-    # map_filename = "googlemaps-stitch/swx297402-swy393907-nex297409-ney393901-z20.png"
+    map_filename = "googlemaps-stitch/swx297402-swy393907-nex297409-ney393901-z20.png"
     # map_filename = "googlemaps-stitch/swx594804-swy787815-nex594819-ney787803-z21.png"
     # map_filename = "googlemaps-stitch/swx1189609-swy1575631-nex1189639-ney1575606-z22.png"
     # map_filename = "googlemaps-stitch/swx2379218-swy3151263-nex2379279-ney3151213-z23.png"
 
-    map_filename = "googlemaps-stitch/swx297400-swy393909-nex297412-ney393899-z20.png"
+    # map_filename = "googlemaps-stitch/swx297400-swy393909-nex297412-ney393899-z20.png"
     # map_filename = "googlemaps-stitch/swx594800-swy787819-nex594824-ney787799-z21.png"
 
     # lat, lon, alt in meters
     # above home plate
     uav_pos = [40.80164174483064, -77.89348745160423, 10]
     # roll, pitch, yaw, degrees
-    uav_att = [0, 90, 0]
+    uav_att = [0, 0, 0]
     # camera attitude offsets from straight down
-    cam_att = [0, 0, 0]
+    cam_att = [0, 90-12, 0]
 
     # calibrate gopro hero 3 1080p wide
     distortion = np.array([
