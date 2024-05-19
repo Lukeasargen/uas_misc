@@ -4,6 +4,8 @@ __pycache__
 *.png
 video_extract*
 
+cam_calibration/images
+
 googlemaps*
 SimCam
 gopro video
