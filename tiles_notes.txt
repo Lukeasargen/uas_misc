@@ -1,0 +1,48 @@
+
+
+# Not used, but useful formulas for total FOV angle
+# fov_x = np.degrees(2*np.arctan(0.5*width/fx))
+# fov_y = np.degrees(2*np.arctan(0.5*height/fy))
+# print(f"{fov_x = }. {fov_y = }")
+
+
+http://jepsonsblog.blogspot.tw/2012/11/rotation-in-3d-using-opencvs.html
+calculate extrinsic matrix
+
+Warp perspective remaps everything in the porjection space
+includes pixels behind the view cone
+Instead use remap and clip the z-axis
+
+polynomial distortion
+
+try1
+http://wscg.zcu.cz/WSCG2018/Poster/P83-full.PDF
+Inversion based on taylor series
+
+try2
+https://github.com/mah92/camsim/blob/simulation/View/nsrOSGShaders.cpp#L459
+gauss-newton solver
+simplified form of kalibr inverse radialTangential model
+
+try3
+chain rule with L1 loss
+
+try4 not done
+https://github.com/Synthesis-AI-Dev/fisheye-distortion/blob/master/apply_fisheye_distortion.py#L68
+
+
+Appears to be a maximum radius
+pixels wrap around
+
+https://openaccess.thecvf.com/content/WACV2022/papers/Leotta_On_the_Maximum_Radius_of_Polynomial_Lens_Distortion_WACV_2022_paper.pdf
+https://github.com/Kitware/max-lens-radius
+check bijective radius
+exclude pixels outside radius
+
+Now the valid pixels to converge
+
+Make a dictionary for the camera params
+Hash the dictionary
+See if hash is unqiue for params
+Use this hash to save the undistorted pixels
+
